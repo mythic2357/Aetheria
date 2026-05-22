@@ -3,219 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aether: Phase 2 Viewport Scroll</title>
+    <title>Aether: Modular Core Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { margin: 0; overflow: hidden; background-color: #090d16; }
-        canvas { display: block; }
-    </style>
 </head>
-<body class="relative select-none text-slate-700 font-sans">
+<body class="relative bg-[#090d16] overflow-hidden select-none w-screen h-screen m-0">
 
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvas" class="block w-full h-full"></canvas>
 
     <div class="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
+        
         <div class="flex justify-between items-start">
-            <div class="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-emerald-100">
-                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block">Aether Cartography</span>
-                <div class="text-sm font-black text-slate-800 mt-1">
-                    Discovered: <span id="ui-discovered" class="text-indigo-600">0</span>%
+            
+            <div class="bg-amber-50/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border-2 border-amber-200 flex items-center gap-3">
+                <span class="inline-block w-4 h-4 bg-slate-500 rounded-sm shadow-md"></span>
+                <div>
+                    <span class="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Material Pouch</span>
+                    <div class="text-lg font-black text-slate-800 leading-none mt-0.5">
+                        <span id="ui-stone-count">0</span> <span class="text-xs font-semibold text-slate-500">Stone Shards</span>
+                    </div>
                 </div>
             </div>
-            <div class="bg-white/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-md text-xs font-semibold text-slate-500">
-                World Map: <span class="text-slate-800 font-bold">100x100 Grid</span> | Cam Pos: [<span id="ui-cam" class="text-slate-800 font-bold">0, 0</span>]
+
+            <div class="flex flex-col gap-2 items-end">
+                <div class="bg-white/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-md border border-slate-100 text-right">
+                    <span class="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Cartography</span>
+                    <div class="text-sm font-black text-slate-800 mt-0.5">
+                        Revealed: <span id="ui-discovered">0</span>%
+                    </div>
+                </div>
+                <div class="bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-700 text-[10px] font-mono text-slate-400 flex flex-col items-end gap-0.5">
+                    <div>Seed: <span id="ui-seed" class="text-amber-400 font-bold">---</span></div>
+                    <div>World Time: <span id="ui-clock" class="text-emerald-400">Day 1, 00:00</span></div>
+                </div>
             </div>
         </div>
 
         <div class="flex justify-center mb-2">
-            <div class="bg-slate-900/90 backdrop-blur-sm px-6 py-2.5 rounded-full shadow-lg border border-slate-700 text-xs tracking-wide text-slate-200">
-                Explore the deep edges of the continent. The camera tracks you smoothly.
+            <div class="bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-slate-700 text-xs font-medium tracking-wide text-slate-200">
+                Move with <span class="bg-slate-700 px-2 py-0.5 rounded text-white font-bold mx-0.5 border-b-2 border-slate-950">W</span><span class="bg-slate-700 px-2 py-0.5 rounded text-white font-bold mx-0.5 border-b-2 border-slate-950">A</span><span class="bg-slate-700 px-2 py-0.5 rounded text-white font-bold mx-0.5 border-b-2 border-slate-950">S</span><span class="bg-slate-700 px-2 py-0.5 rounded text-white font-bold mx-0.5 border-b-2 border-slate-950">D</span> • Strike Mountains with <span class="text-amber-400 font-bold">Left-Click</span>
             </div>
         </div>
     </div>
 
-    <script>
-        // --- 1. CANVAS RUNTIME RESIZING ---
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+    <script type="module" src="src/main.js"></script>
 
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resize);
-        resize();
-
-        // --- 2. GAME MATRIX METRICS ---
-        const TILE_SIZE = 32;
-        const CHAR_WIDTH = 32;
-        const CHAR_HEIGHT = 48;
-
-        // Expanded Map Boundaries (100x100 tiles is a massive space!)
-        const MAP_COLS = 100;
-        const MAP_ROWS = 100;
-
-        const PALETTE = {
-            'deep_water': '#1d4ed8',
-            'plush_grass': '#22c55e',
-            'stone_wall': '#64748b',
-            'fog_hidden': '#0f172a',
-            'player_color': '#f43f5e'
-        };
-
-        let worldGrid = {};
-        let fogGrid = {};
-
-        // Spawn character dead-center of the massive continent map
-        let player = {
-            x: (MAP_COLS * TILE_SIZE) / 2,
-            y: (MAP_ROWS * TILE_SIZE) / 2,
-            speed: 5
-        };
-
-        // Smooth Viewport Vector tracking details
-        let camera = { x: player.x, y: player.y };
-
-        const input = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
-
-        // --- 3. GEOGRAPHY MAKER ROUTINES ---
-        function generateMassiveContinent() {
-            for (let x = 0; x < MAP_COLS; x++) {
-                for (let y = 0; y < MAP_ROWS; y++) {
-                    let tileKey = `x${x}_y${y}`;
-                    let type = 'plush_grass';
-
-                    // Shoreline containment system
-                    if (x < 5 || x > MAP_COLS - 6 || y < 5 || y > MAP_ROWS - 6) {
-                        type = 'deep_water';
-                    } else {
-                        // Natural landscape organic noise variation clusters
-                        let landscapeNoise = Math.sin(x * 0.2) * Math.cos(y * 0.2) + Math.sin(x * 0.05);
-                        if (landscapeNoise > 0.7) {
-                            type = 'stone_wall';
-                        }
-                    }
-
-                    worldGrid[tileKey] = type;
-                    fogGrid[tileKey] = true; 
-                }
-            }
-        }
-
-        // --- 4. ENGINE UPDATING ROUTINES ---
-        window.addEventListener('keydown', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = true; });
-        window.addEventListener('keyup', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = false; });
-
-        function updateGameLogic() {
-            // Player directional velocity applications
-            if (input.w || input.ArrowUp) player.y -= player.speed;
-            if (input.s || input.ArrowDown) player.y += player.speed;
-            if (input.a || input.ArrowLeft) player.x -= player.speed;
-            if (input.d || input.ArrowRight) player.x += player.speed;
-
-            // Contain character inside the macro physical layout dimensions
-            player.x = Math.max(0, Math.min(player.x, (MAP_COLS * TILE_SIZE) - CHAR_WIDTH));
-            player.y = Math.max(0, Math.min(player.y, (MAP_ROWS * TILE_SIZE) - CHAR_HEIGHT));
-
-            // FOG REMOVAL SCANS
-            let playerGridX = Math.floor((player.x + CHAR_WIDTH / 2) / TILE_SIZE);
-            let playerGridY = Math.floor((player.y + CHAR_HEIGHT - 4) / TILE_SIZE);
-
-            let sightRadius = 4; // Expanded vision footprint range slightly
-            for (let rx = -sightRadius; rx <= sightRadius; rx++) {
-                for (let ry = -sightRadius; ry <= sightRadius; ry++) {
-                    let targetX = playerGridX + rx;
-                    let targetY = playerGridY + ry;
-                    if (Math.sqrt(rx*rx + ry*ry) <= sightRadius) {
-                        fogGrid[`x${targetX}_y${targetY}`] = false;
-                    }
-                }
-            }
-
-            // CAMERA LERP MATRIX INTERPOLATION
-            // Target the camera to center the player rectangle frame on your viewport monitor screen
-            let targetCamX = (player.x + CHAR_WIDTH / 2) - (canvas.width / 2);
-            let targetCamY = (player.y + CHAR_HEIGHT / 2) - (canvas.height / 2);
-
-            // Linear Interpolation calculation (0.08 = 8% camera speed convergence shift per frame)
-            camera.x += (targetCamX - camera.x) * 0.08;
-            camera.y += (targetCamY - camera.y) * 0.08;
-
-            // Restrict camera view workspace from floating out past the absolute ocean map boundaries
-            camera.x = Math.max(0, Math.min(camera.x, (MAP_COLS * TILE_SIZE) - canvas.width));
-            camera.y = Math.max(0, Math.min(camera.y, (MAP_ROWS * TILE_SIZE) - canvas.height));
-
-            document.getElementById('ui-cam').innerText = `${Math.floor(camera.x)}, ${Math.floor(camera.y)}`;
-            calculateMetrics();
-        }
-
-        function calculateMetrics() {
-            let totalTiles = MAP_COLS * MAP_ROWS;
-            let cleared = 0;
-            for (let key in fogGrid) { if (fogGrid[key] === false) cleared++; }
-            document.getElementById('ui-discovered').innerText = Math.floor((cleared / totalTiles) * 100);
-        }
-
-        // --- 5. VISUAL RENDERING ROUTINES ---
-        function renderScene() {
-            ctx.fillStyle = '#090d16';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // SAVE RENDER CONTEXT STATE FOR MATRIX SCROLLING
-            ctx.save();
-            ctx.translate(-camera.x, -camera.y);
-
-            // CULLING SYSTEM FRUSTUM CALCULATION: Draw only visible tiles
-            let startCol = Math.floor(camera.x / TILE_SIZE);
-            let endCol = startCol + Math.ceil(canvas.width / TILE_SIZE) + 1;
-            let startRow = Math.floor(camera.y / TILE_SIZE);
-            let endRow = startRow + Math.ceil(canvas.height / TILE_SIZE) + 1;
-
-            // Clamp bounding checks within max array bounds
-            startCol = Math.max(0, startCol); endCol = Math.min(MAP_COLS - 1, endCol);
-            startRow = Math.max(0, startRow); endRow = Math.min(MAP_ROWS - 1, endRow);
-
-            for (let x = startCol; x <= endCol; x++) {
-                for (let y = startRow; y <= endRow; y++) {
-                    let tileKey = `x${x}_y${y}`;
-                    let renderX = x * TILE_SIZE;
-                    let renderY = y * TILE_SIZE;
-
-                    if (fogGrid[tileKey] === true) {
-                        ctx.fillStyle = PALETTE['fog_hidden'];
-                        ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
-                    } else {
-                        ctx.fillStyle = PALETTE[worldGrid[tileKey]];
-                        ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
-
-                        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-                        ctx.strokeRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
-                    }
-                }
-            }
-
-            // Draw character relative to global world space coordinates
-            ctx.fillStyle = PALETTE['player_color'];
-            ctx.fillRect(player.x, player.y, CHAR_WIDTH, CHAR_HEIGHT);
-
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(player.x + 12, player.y + 10, 8, 20);
-            ctx.fillRect(player.x + 4, player.y + 6, 24, 6);
-
-            // RESTORE ORIGINAL RENDER FRAME SYSTEM
-            ctx.restore();
-        }
-
-        function mainLoop() {
-            updateGameLogic();
-            renderScene();
-            requestAnimationFrame(mainLoop);
-        }
-
-        // --- 6. CORE STARTUP ---
-        generateMassiveContinent();
-        requestAnimationFrame(mainLoop);
-
-    </script>
 </body>
 </html>
