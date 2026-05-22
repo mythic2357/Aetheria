@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aetheria: Colorful Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        
+        /* Custom n-gon style scanline effect for the HUD */
+        .scanlines {
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+            background-size: 100% 4px;
+        }
+    </style>
+</head>
+<body class="relative select-none text-white font-mono">
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
+        
+        <div class="flex justify-between items-start">
+            <div class="bg-black/60 backdrop-blur-md border-l-4 border-emerald-400 p-4 rounded-r-lg scanlines shadow-[0_0_15px_rgba(52,211,153,0.3)]">
+                <div class="text-xs text-emerald-400 tracking-widest mb-1 uppercase">Entity Integrity</div>
+                <div class="flex gap-1 mb-3">
+                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
+                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
+                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
+                    <div class="h-4 w-8 bg-emerald-400/30 rounded-sm"></div>
+                </div>
+                <div class="text-sm font-bold text-gray-200">WPN: <span class="text-cyan-400">PHASE_LASER</span></div>
+                <div class="text-sm font-bold text-gray-200">MOD: <span class="text-pink-400">GRAVITY_TETHER</span></div>
+            </div>
+
+            <div class="bg-black/60 backdrop-blur-md border-r-4 border-pink-500 p-4 rounded-l-lg text-right scanlines shadow-[0_0_15px_rgba(236,72,153,0.3)]">
+                <div class="text-xs text-pink-500 tracking-widest mb-1 uppercase">System Telemetry</div>
+                <div class="text-sm">FPS: <span id="ui-fps" class="text-white font-bold">60</span></div>
+                <div class="text-sm">POS: [<span id="ui-pos" class="text-cyan-400">0, 0</span>]</div>
+                <div class="text-sm">CHUNKS: <span id="ui-chunks" class="text-emerald-400">12,000</span></div>
+            </div>
+        </div>
+
+        <div class="flex justify-center">
+            <div class="bg-black/40 backdrop-blur-sm px-6 py-2 rounded-full border border-gray-700 text-xs tracking-wider text-gray-300">
+                [W,A,S,D] PAN CAMERA &nbsp;|&nbsp; [CLICK] INACTIVE IN PHASE 1
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. ENGINE & CANVAS SETUP ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Dynamic resizing
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- 2. GAME VARIABLES & THEME ---
+        const BLOCK_SIZE = 30; 
+        const WORLD_WIDTH = 200;  
+        const WORLD_HEIGHT = 100; 
+
+        // The Whimsical Color Palette
+        const THEME = {
+            'grass': '#34d399', // Emerald 400
+            'dirt': '#b45309',  // Amber 700
+            'stone': '#312e81', // Indigo 900 (Deep magical caves)
+            'ore': '#22d3ee'    // Cyan 400 (Glowing tech)
+        };
+
+        let worldMap = {};
+        let camera = { x: 0, y: 0 };
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+
+        // FPS Tracking
+        let lastTime = performance.now();
+        let frames = 0;
+        let currentFps = 60;
+
+        // --- 3. INPUT HANDLING ---
+        window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+        // --- 4. WORLD GENERATION ---
+        function generateWorldData() {
+            let totalBlocks = 0;
+            for (let x = 0; x < WORLD_WIDTH; x++) {
+                // Smooth sine wave terrain
+                let baseHeight = 35; 
+                let wave1 = Math.sin(x * 0.08) * 8;
+                let wave2 = Math.cos(x * 0.03) * 4;
+                let surfaceY = Math.floor(baseHeight + wave1 + wave2);
+
+                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                    let tileType = 'air';
+
+                    if (y === surfaceY) tileType = 'grass';
+                    else if (y > surfaceY && y < surfaceY + 6) tileType = 'dirt';
+                    else if (y >= surfaceY + 6) {
+                        tileType = 'stone';
+                        // Cave Generation
+                        let caveNoise = Math.sin(x * 0.2) * Math.cos(y * 0.2) + Math.sin(x * 0.05);
+                        if (caveNoise > 0.6) {
+                            tileType = 'air'; 
+                        } else if (Math.random() > 0.98 && y > surfaceY + 15) {
+                            tileType = 'ore'; // Tech ruins/ores
+                        }
+                    }
+
+                    if (tileType !== 'air') {
+                        worldMap[`x${x}_y${y}`] = { type: tileType };
+                        totalBlocks++;
+                    }
+                }
+            }
+            document.getElementById('ui-chunks').innerText = totalBlocks.toLocaleString();
+        }
+
+        // --- 5. RENDER & UPDATE LOOP ---
+        function updateCamera() {
+            const speed = 10;
+            if (keys.w || keys.ArrowUp) camera.y -= speed;
+            if (keys.s || keys.ArrowDown) camera.y += speed;
+            if (keys.a || keys.ArrowLeft) camera.x -= speed;
+            if (keys.d || keys.ArrowRight) camera.x += speed;
+
+            // Constrain camera roughly to world bounds
+            camera.x = Math.max(0, Math.min(camera.x, (WORLD_WIDTH * BLOCK_SIZE) - canvas.width));
+            camera.y = Math.max(0, Math.min(camera.y, (WORLD_HEIGHT * BLOCK_SIZE) - canvas.height));
+            
+            document.getElementById('ui-pos').innerText = `${Math.floor(camera.x / BLOCK_SIZE)}, ${Math.floor(camera.y / BLOCK_SIZE)}`;
+        }
+
+        function drawBackground() {
+            // Draw a beautiful sunset/sunrise gradient for the sky
+            let bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, '#fdf4ff'); // Fuchsia 50
+            bgGradient.addColorStop(0.4, '#f9a8d4'); // Pink 300
+            bgGradient.addColorStop(1, '#7dd3fc'); // Light Blue 300
+            
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function renderWorld() {
+            // Calculate visible grid boundaries to save performance (Chunking Preview)
+            let startCol = Math.floor(camera.x / BLOCK_SIZE);
+            let endCol = startCol + (canvas.width / BLOCK_SIZE) + 1;
+            let startRow = Math.floor(camera.y / BLOCK_SIZE);
+            let endRow = startRow + (canvas.height / BLOCK_SIZE) + 1;
+
+            for (let x = startCol; x <= endCol; x++) {
+                for (let y = startRow; y <= endRow; y++) {
+                    let tile = worldMap[`x${x}_y${y}`];
+                    if (!tile) continue;
+
+                    let screenX = (x * BLOCK_SIZE) - camera.x;
+                    let screenY = (y * BLOCK_SIZE) - camera.y;
+
+                    // Draw block with a slight inner shadow effect for depth
+                    ctx.fillStyle = THEME[tile.type];
+                    ctx.fillRect(screenX, screenY, BLOCK_SIZE, BLOCK_SIZE);
+                    
+                    // Add grid lines
+                    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                    ctx.strokeRect(screenX, screenY, BLOCK_SIZE, BLOCK_SIZE);
+
+                    // Add glow to ore
+                    if (tile.type === 'ore') {
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                        ctx.fillRect(screenX + 6, screenY + 6, BLOCK_SIZE - 12, BLOCK_SIZE - 12);
+                    }
+                }
+            }
+        }
+
+        function loop(timestamp) {
+            // Calculate FPS
+            frames++;
+            if (timestamp - lastTime >= 1000) {
+                document.getElementById('ui-fps').innerText = frames;
+                frames = 0; lastTime = timestamp;
+            }
+
+            updateCamera();
+            drawBackground();
+            renderWorld();
+
+            requestAnimationFrame(loop);
+        }
+
+        // --- 6. INITIALIZATION ---
+        generateWorldData();
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
