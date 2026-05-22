@@ -3,59 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aetheria: Colorful Sandbox</title>
+    <title>Living Ark: Phase 1 Prototype</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
+        body { margin: 0; overflow: hidden; background-color: #090d16; }
         canvas { display: block; }
-        
-        /* Custom n-gon style scanline effect for the HUD */
-        .scanlines {
-            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
-            background-size: 100% 4px;
-        }
     </style>
 </head>
-<body class="relative select-none text-white font-mono">
+<body class="relative select-none text-slate-700 font-sans">
 
     <canvas id="gameCanvas"></canvas>
 
     <div class="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
-        
         <div class="flex justify-between items-start">
-            <div class="bg-black/60 backdrop-blur-md border-l-4 border-emerald-400 p-4 rounded-r-lg scanlines shadow-[0_0_15px_rgba(52,211,153,0.3)]">
-                <div class="text-xs text-emerald-400 tracking-widest mb-1 uppercase">Entity Integrity</div>
-                <div class="flex gap-1 mb-3">
-                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
-                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
-                    <div class="h-4 w-8 bg-emerald-400 rounded-sm"></div>
-                    <div class="h-4 w-8 bg-emerald-400/30 rounded-sm"></div>
+            <div class="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-emerald-100">
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block">Ark Cartography</span>
+                <div class="text-sm font-black text-slate-800 mt-1">
+                    Discovered Land: <span id="ui-discovered" class="text-indigo-600">0</span>%
                 </div>
-                <div class="text-sm font-bold text-gray-200">WPN: <span class="text-cyan-400">PHASE_LASER</span></div>
-                <div class="text-sm font-bold text-gray-200">MOD: <span class="text-pink-400">GRAVITY_TETHER</span></div>
             </div>
-
-            <div class="bg-black/60 backdrop-blur-md border-r-4 border-pink-500 p-4 rounded-l-lg text-right scanlines shadow-[0_0_15px_rgba(236,72,153,0.3)]">
-                <div class="text-xs text-pink-500 tracking-widest mb-1 uppercase">System Telemetry</div>
-                <div class="text-sm">FPS: <span id="ui-fps" class="text-white font-bold">60</span></div>
-                <div class="text-sm">POS: [<span id="ui-pos" class="text-cyan-400">0, 0</span>]</div>
-                <div class="text-sm">CHUNKS: <span id="ui-chunks" class="text-emerald-400">12,000</span></div>
+            <div class="bg-white/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-md text-xs font-semibold text-slate-500">
+                Grid System: <span class="text-slate-800 font-bold">32x32px Tiles</span> | Char: <span class="text-slate-800 font-bold">32x48px</span>
             </div>
         </div>
 
-        <div class="flex justify-center">
-            <div class="bg-black/40 backdrop-blur-sm px-6 py-2 rounded-full border border-gray-700 text-xs tracking-wider text-gray-300">
-                [W,A,S,D] PAN CAMERA &nbsp;|&nbsp; [CLICK] INACTIVE IN PHASE 1
+        <div class="flex justify-center mb-2">
+            <div class="bg-slate-900/90 backdrop-blur-sm px-6 py-2.5 rounded-full shadow-lg border border-slate-700 text-xs tracking-wide text-slate-200">
+                Use <span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">W</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">A</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">S</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">D</span> to Move Character and Clear the Fog
             </div>
         </div>
     </div>
 
     <script>
-        // --- 1. ENGINE & CANVAS SETUP ---
+        // --- 1. SETTING UP RESIZABLE VIEWPORT ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Dynamic resizing
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -63,143 +46,154 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // --- 2. GAME VARIABLES & THEME ---
-        const BLOCK_SIZE = 30; 
-        const WORLD_WIDTH = 200;  
-        const WORLD_HEIGHT = 100; 
+        // --- 2. LAYING DOWN DESIGN CONSTANTS ---
+        const TILE_SIZE = 32;
+        const CHAR_WIDTH = 32;
+        const CHAR_HEIGHT = 48; // 1.5 Tiles tall!
 
-        // The Whimsical Color Palette
-        const THEME = {
-            'grass': '#34d399', // Emerald 400
-            'dirt': '#b45309',  // Amber 700
-            'stone': '#312e81', // Indigo 900 (Deep magical caves)
-            'ore': '#22d3ee'    // Cyan 400 (Glowing tech)
+        // Map Size (in terms of grid cells)
+        const MAP_COLS = 60;
+        const MAP_ROWS = 40;
+
+        const PALETTE = {
+            'deep_water': '#1d4ed8', // Dark Blue
+            'plush_grass': '#22c55e', // Vibrant Grass Green
+            'stone_wall': '#64748b',  // Rocky Mountain Gray
+            'fog_hidden': '#0f172a',  // Dark, mysterious Midnight Blue fog
+            'player_color': '#f43f5e' // Bright rose silhouette placeholder
         };
 
-        let worldMap = {};
-        let camera = { x: 0, y: 0 };
-        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+        // --- 3. DATA ENGINE MEMORY STRUCTURES ---
+        let worldGrid = {};
+        let fogGrid = {}; // true = hidden under fog, false = cleared/discovered
 
-        // FPS Tracking
-        let lastTime = performance.now();
-        let frames = 0;
-        let currentFps = 60;
+        // Character object position details (centered initially)
+        let player = {
+            x: (MAP_COLS * TILE_SIZE) / 2,
+            y: (MAP_ROWS * TILE_SIZE) / 2,
+            speed: 4
+        };
 
-        // --- 3. INPUT HANDLING ---
-        window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
-        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+        const input = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
 
-        // --- 4. WORLD GENERATION ---
-        function generateWorldData() {
-            let totalBlocks = 0;
-            for (let x = 0; x < WORLD_WIDTH; x++) {
-                // Smooth sine wave terrain
-                let baseHeight = 35; 
-                let wave1 = Math.sin(x * 0.08) * 8;
-                let wave2 = Math.cos(x * 0.03) * 4;
-                let surfaceY = Math.floor(baseHeight + wave1 + wave2);
+        // --- 4. ENGINE GENERATION MATRIX ---
+        function generateStructuredContinent() {
+            for (let x = 0; x < MAP_COLS; x++) {
+                for (let y = 0; y < MAP_ROWS; y++) {
+                    let tileKey = `x${x}_y${y}`;
+                    let type = 'plush_grass';
 
-                for (let y = 0; y < WORLD_HEIGHT; y++) {
-                    let tileType = 'air';
-
-                    if (y === surfaceY) tileType = 'grass';
-                    else if (y > surfaceY && y < surfaceY + 6) tileType = 'dirt';
-                    else if (y >= surfaceY + 6) {
-                        tileType = 'stone';
-                        // Cave Generation
-                        let caveNoise = Math.sin(x * 0.2) * Math.cos(y * 0.2) + Math.sin(x * 0.05);
-                        if (caveNoise > 0.6) {
-                            tileType = 'air'; 
-                        } else if (Math.random() > 0.98 && y > surfaceY + 15) {
-                            tileType = 'ore'; // Tech ruins/ores
+                    // Create a natural water boundary along the map perimeter edges
+                    if (x < 3 || x > MAP_COLS - 4 || y < 3 || y > MAP_ROWS - 4) {
+                        type = 'deep_water';
+                    } else {
+                        // Generate random craggy mountain formations across the interior layout
+                        let clusterNoise = Math.sin(x * 0.3) * Math.cos(y * 0.3);
+                        if (clusterNoise > 0.45) {
+                            type = 'stone_wall';
                         }
                     }
 
-                    if (tileType !== 'air') {
-                        worldMap[`x${x}_y${y}`] = { type: tileType };
-                        totalBlocks++;
-                    }
+                    worldGrid[tileKey] = type;
+                    fogGrid[tileKey] = true; // Entire map starts hidden in heavy fog
                 }
             }
-            document.getElementById('ui-chunks').innerText = totalBlocks.toLocaleString();
         }
 
-        // --- 5. RENDER & UPDATE LOOP ---
-        function updateCamera() {
-            const speed = 10;
-            if (keys.w || keys.ArrowUp) camera.y -= speed;
-            if (keys.s || keys.ArrowDown) camera.y += speed;
-            if (keys.a || keys.ArrowLeft) camera.x -= speed;
-            if (keys.d || keys.ArrowRight) camera.x += speed;
+        // --- 5. LOGIC PROCESSING RUNTIME ---
+        window.addEventListener('keydown', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = true; });
+        window.addEventListener('keyup', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = false; });
 
-            // Constrain camera roughly to world bounds
-            camera.x = Math.max(0, Math.min(camera.x, (WORLD_WIDTH * BLOCK_SIZE) - canvas.width));
-            camera.y = Math.max(0, Math.min(camera.y, (WORLD_HEIGHT * BLOCK_SIZE) - canvas.height));
-            
-            document.getElementById('ui-pos').innerText = `${Math.floor(camera.x / BLOCK_SIZE)}, ${Math.floor(camera.y / BLOCK_SIZE)}`;
-        }
+        function processPlayerMechanics() {
+            // Apply movement directions
+            if (input.w || input.ArrowUp) player.y -= player.speed;
+            if (input.s || input.ArrowDown) player.y += player.speed;
+            if (input.a || input.ArrowLeft) player.x -= player.speed;
+            if (input.d || input.ArrowRight) player.x += player.speed;
 
-        function drawBackground() {
-            // Draw a beautiful sunset/sunrise gradient for the sky
-            let bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            bgGradient.addColorStop(0, '#fdf4ff'); // Fuchsia 50
-            bgGradient.addColorStop(0.4, '#f9a8d4'); // Pink 300
-            bgGradient.addColorStop(1, '#7dd3fc'); // Light Blue 300
-            
-            ctx.fillStyle = bgGradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
+            // Simple map border clamps to prevent character escaping boundary bounds
+            player.x = Math.max(0, Math.min(player.x, (MAP_COLS * TILE_SIZE) - CHAR_WIDTH));
+            player.y = Math.max(0, Math.min(player.y, (MAP_ROWS * TILE_SIZE) - CHAR_HEIGHT));
 
-        function renderWorld() {
-            // Calculate visible grid boundaries to save performance (Chunking Preview)
-            let startCol = Math.floor(camera.x / BLOCK_SIZE);
-            let endCol = startCol + (canvas.width / BLOCK_SIZE) + 1;
-            let startRow = Math.floor(camera.y / BLOCK_SIZE);
-            let endRow = startRow + (canvas.height / BLOCK_SIZE) + 1;
+            // CALCULATE FOG CLEARANCE: Find what tile the character's feet are sitting on
+            let playerGridX = Math.floor((player.x + CHAR_WIDTH / 2) / TILE_SIZE);
+            let playerGridY = Math.floor((player.y + CHAR_HEIGHT - 4) / TILE_SIZE);
 
-            for (let x = startCol; x <= endCol; x++) {
-                for (let y = startRow; y <= endRow; y++) {
-                    let tile = worldMap[`x${x}_y${y}`];
-                    if (!tile) continue;
-
-                    let screenX = (x * BLOCK_SIZE) - camera.x;
-                    let screenY = (y * BLOCK_SIZE) - camera.y;
-
-                    // Draw block with a slight inner shadow effect for depth
-                    ctx.fillStyle = THEME[tile.type];
-                    ctx.fillRect(screenX, screenY, BLOCK_SIZE, BLOCK_SIZE);
+            // Burn away fog in a small circular sight radius around our character position coordinates
+            let sightRadius = 3;
+            for (let rx = -sightRadius; rx <= sightRadius; rx++) {
+                for (let ry = -sightRadius; ry <= sightRadius; ry++) {
+                    let targetX = playerGridX + rx;
+                    let targetY = playerGridY + ry;
                     
-                    // Add grid lines
-                    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-                    ctx.strokeRect(screenX, screenY, BLOCK_SIZE, BLOCK_SIZE);
-
-                    // Add glow to ore
-                    if (tile.type === 'ore') {
-                        ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                        ctx.fillRect(screenX + 6, screenY + 6, BLOCK_SIZE - 12, BLOCK_SIZE - 12);
+                    // Simple distance formula logic to keep visibility circle profile round
+                    if (Math.sqrt(rx*rx + ry*ry) <= sightRadius) {
+                        fogGrid[`x${targetX}_y${targetY}`] = false; 
                     }
                 }
             }
+
+            calculateDiscoveryMetrics();
         }
 
-        function loop(timestamp) {
-            // Calculate FPS
-            frames++;
-            if (timestamp - lastTime >= 1000) {
-                document.getElementById('ui-fps').innerText = frames;
-                frames = 0; lastTime = timestamp;
+        function calculateDiscoveryMetrics() {
+            let totalTiles = MAP_COLS * MAP_ROWS;
+            let clearedCount = 0;
+            for (let key in fogGrid) {
+                if (fogGrid[key] === false) clearedCount++;
+            }
+            let percentage = Math.floor((clearedCount / totalTiles) * 100);
+            document.getElementById('ui-discovered').innerText = percentage;
+        }
+
+        // --- 6. RENDER MATRIX DRAW LOOP ---
+        function renderScene() {
+            // Clear the viewport display area
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Loop through map space definitions
+            for (let x = 0; x < MAP_COLS; x++) {
+                for (let y = 0; y < MAP_ROWS; y++) {
+                    let tileKey = `x${x}_y${y}`;
+                    let renderX = x * TILE_SIZE;
+                    let renderY = y * TILE_SIZE;
+
+                    if (fogGrid[tileKey] === true) {
+                        // Render thick fog blocks
+                        ctx.fillStyle = PALETTE['fog_hidden'];
+                        ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
+                    } else {
+                        // Draw revealed ground tiles
+                        ctx.fillStyle = PALETTE[worldGrid[tileKey]];
+                        ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
+
+                        // Subtle framing boundary line for grid layout separation alignment
+                        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+                        ctx.strokeRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
+                    }
+                }
             }
 
-            updateCamera();
-            drawBackground();
-            renderWorld();
+            // Draw the Player Character (1.5 tiles tall placeholder asset box)
+            ctx.fillStyle = PALETTE['player_color'];
+            ctx.fillRect(player.x, player.y, CHAR_WIDTH, CHAR_HEIGHT);
 
-            requestAnimationFrame(loop);
+            // Draw simple black structural tool overlay on player placeholder box
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(player.x + 12, player.y + 10, 8, 20); // Tool Handle
+            ctx.fillRect(player.x + 4, player.y + 6, 24, 6);   // Tool Mallet Head
         }
 
-        // --- 6. INITIALIZATION ---
-        generateWorldData();
-        requestAnimationFrame(loop);
+        function mainLoop() {
+            processPlayerMechanics();
+            renderScene();
+            requestAnimationFrame(mainLoop);
+        }
+
+        // --- 7. INITIALIZATION RUN ---
+        generateStructuredContinent();
+        requestAnimationFrame(mainLoop);
 
     </script>
 </body>
