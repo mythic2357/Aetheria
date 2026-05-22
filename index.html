@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Living Ark: Phase 1 Prototype</title>
+    <title>Aether: Phase 2 Viewport Scroll</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { margin: 0; overflow: hidden; background-color: #090d16; }
@@ -17,25 +17,25 @@
     <div class="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
         <div class="flex justify-between items-start">
             <div class="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl shadow-xl border border-emerald-100">
-                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block">Ark Cartography</span>
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block">Aether Cartography</span>
                 <div class="text-sm font-black text-slate-800 mt-1">
-                    Discovered Land: <span id="ui-discovered" class="text-indigo-600">0</span>%
+                    Discovered: <span id="ui-discovered" class="text-indigo-600">0</span>%
                 </div>
             </div>
             <div class="bg-white/95 backdrop-blur-md px-4 py-2 rounded-xl shadow-md text-xs font-semibold text-slate-500">
-                Grid System: <span class="text-slate-800 font-bold">32x32px Tiles</span> | Char: <span class="text-slate-800 font-bold">32x48px</span>
+                World Map: <span class="text-slate-800 font-bold">100x100 Grid</span> | Cam Pos: [<span id="ui-cam" class="text-slate-800 font-bold">0, 0</span>]
             </div>
         </div>
 
         <div class="flex justify-center mb-2">
             <div class="bg-slate-900/90 backdrop-blur-sm px-6 py-2.5 rounded-full shadow-lg border border-slate-700 text-xs tracking-wide text-slate-200">
-                Use <span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">W</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">A</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">S</span><span class="bg-slate-700 px-1.5 py-0.5 rounded text-white font-bold mx-0.5">D</span> to Move Character and Clear the Fog
+                Explore the deep edges of the continent. The camera tracks you smoothly.
             </div>
         </div>
     </div>
 
     <script>
-        // --- 1. SETTING UP RESIZABLE VIEWPORT ---
+        // --- 1. CANVAS RUNTIME RESIZING ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -46,153 +46,174 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // --- 2. LAYING DOWN DESIGN CONSTANTS ---
+        // --- 2. GAME MATRIX METRICS ---
         const TILE_SIZE = 32;
         const CHAR_WIDTH = 32;
-        const CHAR_HEIGHT = 48; // 1.5 Tiles tall!
+        const CHAR_HEIGHT = 48;
 
-        // Map Size (in terms of grid cells)
-        const MAP_COLS = 60;
-        const MAP_ROWS = 40;
+        // Expanded Map Boundaries (100x100 tiles is a massive space!)
+        const MAP_COLS = 100;
+        const MAP_ROWS = 100;
 
         const PALETTE = {
-            'deep_water': '#1d4ed8', // Dark Blue
-            'plush_grass': '#22c55e', // Vibrant Grass Green
-            'stone_wall': '#64748b',  // Rocky Mountain Gray
-            'fog_hidden': '#0f172a',  // Dark, mysterious Midnight Blue fog
-            'player_color': '#f43f5e' // Bright rose silhouette placeholder
+            'deep_water': '#1d4ed8',
+            'plush_grass': '#22c55e',
+            'stone_wall': '#64748b',
+            'fog_hidden': '#0f172a',
+            'player_color': '#f43f5e'
         };
 
-        // --- 3. DATA ENGINE MEMORY STRUCTURES ---
         let worldGrid = {};
-        let fogGrid = {}; // true = hidden under fog, false = cleared/discovered
+        let fogGrid = {};
 
-        // Character object position details (centered initially)
+        // Spawn character dead-center of the massive continent map
         let player = {
             x: (MAP_COLS * TILE_SIZE) / 2,
             y: (MAP_ROWS * TILE_SIZE) / 2,
-            speed: 4
+            speed: 5
         };
+
+        // Smooth Viewport Vector tracking details
+        let camera = { x: player.x, y: player.y };
 
         const input = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
 
-        // --- 4. ENGINE GENERATION MATRIX ---
-        function generateStructuredContinent() {
+        // --- 3. GEOGRAPHY MAKER ROUTINES ---
+        function generateMassiveContinent() {
             for (let x = 0; x < MAP_COLS; x++) {
                 for (let y = 0; y < MAP_ROWS; y++) {
                     let tileKey = `x${x}_y${y}`;
                     let type = 'plush_grass';
 
-                    // Create a natural water boundary along the map perimeter edges
-                    if (x < 3 || x > MAP_COLS - 4 || y < 3 || y > MAP_ROWS - 4) {
+                    // Shoreline containment system
+                    if (x < 5 || x > MAP_COLS - 6 || y < 5 || y > MAP_ROWS - 6) {
                         type = 'deep_water';
                     } else {
-                        // Generate random craggy mountain formations across the interior layout
-                        let clusterNoise = Math.sin(x * 0.3) * Math.cos(y * 0.3);
-                        if (clusterNoise > 0.45) {
+                        // Natural landscape organic noise variation clusters
+                        let landscapeNoise = Math.sin(x * 0.2) * Math.cos(y * 0.2) + Math.sin(x * 0.05);
+                        if (landscapeNoise > 0.7) {
                             type = 'stone_wall';
                         }
                     }
 
                     worldGrid[tileKey] = type;
-                    fogGrid[tileKey] = true; // Entire map starts hidden in heavy fog
+                    fogGrid[tileKey] = true; 
                 }
             }
         }
 
-        // --- 5. LOGIC PROCESSING RUNTIME ---
+        // --- 4. ENGINE UPDATING ROUTINES ---
         window.addEventListener('keydown', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = true; });
         window.addEventListener('keyup', (e) => { if (input.hasOwnProperty(e.key)) input[e.key] = false; });
 
-        function processPlayerMechanics() {
-            // Apply movement directions
+        function updateGameLogic() {
+            // Player directional velocity applications
             if (input.w || input.ArrowUp) player.y -= player.speed;
             if (input.s || input.ArrowDown) player.y += player.speed;
             if (input.a || input.ArrowLeft) player.x -= player.speed;
             if (input.d || input.ArrowRight) player.x += player.speed;
 
-            // Simple map border clamps to prevent character escaping boundary bounds
+            // Contain character inside the macro physical layout dimensions
             player.x = Math.max(0, Math.min(player.x, (MAP_COLS * TILE_SIZE) - CHAR_WIDTH));
             player.y = Math.max(0, Math.min(player.y, (MAP_ROWS * TILE_SIZE) - CHAR_HEIGHT));
 
-            // CALCULATE FOG CLEARANCE: Find what tile the character's feet are sitting on
+            // FOG REMOVAL SCANS
             let playerGridX = Math.floor((player.x + CHAR_WIDTH / 2) / TILE_SIZE);
             let playerGridY = Math.floor((player.y + CHAR_HEIGHT - 4) / TILE_SIZE);
 
-            // Burn away fog in a small circular sight radius around our character position coordinates
-            let sightRadius = 3;
+            let sightRadius = 4; // Expanded vision footprint range slightly
             for (let rx = -sightRadius; rx <= sightRadius; rx++) {
                 for (let ry = -sightRadius; ry <= sightRadius; ry++) {
                     let targetX = playerGridX + rx;
                     let targetY = playerGridY + ry;
-                    
-                    // Simple distance formula logic to keep visibility circle profile round
                     if (Math.sqrt(rx*rx + ry*ry) <= sightRadius) {
-                        fogGrid[`x${targetX}_y${targetY}`] = false; 
+                        fogGrid[`x${targetX}_y${targetY}`] = false;
                     }
                 }
             }
 
-            calculateDiscoveryMetrics();
+            // CAMERA LERP MATRIX INTERPOLATION
+            // Target the camera to center the player rectangle frame on your viewport monitor screen
+            let targetCamX = (player.x + CHAR_WIDTH / 2) - (canvas.width / 2);
+            let targetCamY = (player.y + CHAR_HEIGHT / 2) - (canvas.height / 2);
+
+            // Linear Interpolation calculation (0.08 = 8% camera speed convergence shift per frame)
+            camera.x += (targetCamX - camera.x) * 0.08;
+            camera.y += (targetCamY - camera.y) * 0.08;
+
+            // Restrict camera view workspace from floating out past the absolute ocean map boundaries
+            camera.x = Math.max(0, Math.min(camera.x, (MAP_COLS * TILE_SIZE) - canvas.width));
+            camera.y = Math.max(0, Math.min(camera.y, (MAP_ROWS * TILE_SIZE) - canvas.height));
+
+            document.getElementById('ui-cam').innerText = `${Math.floor(camera.x)}, ${Math.floor(camera.y)}`;
+            calculateMetrics();
         }
 
-        function calculateDiscoveryMetrics() {
+        function calculateMetrics() {
             let totalTiles = MAP_COLS * MAP_ROWS;
-            let clearedCount = 0;
-            for (let key in fogGrid) {
-                if (fogGrid[key] === false) clearedCount++;
-            }
-            let percentage = Math.floor((clearedCount / totalTiles) * 100);
-            document.getElementById('ui-discovered').innerText = percentage;
+            let cleared = 0;
+            for (let key in fogGrid) { if (fogGrid[key] === false) cleared++; }
+            document.getElementById('ui-discovered').innerText = Math.floor((cleared / totalTiles) * 100);
         }
 
-        // --- 6. RENDER MATRIX DRAW LOOP ---
+        // --- 5. VISUAL RENDERING ROUTINES ---
         function renderScene() {
-            // Clear the viewport display area
             ctx.fillStyle = '#090d16';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Loop through map space definitions
-            for (let x = 0; x < MAP_COLS; x++) {
-                for (let y = 0; y < MAP_ROWS; y++) {
+            // SAVE RENDER CONTEXT STATE FOR MATRIX SCROLLING
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            // CULLING SYSTEM FRUSTUM CALCULATION: Draw only visible tiles
+            let startCol = Math.floor(camera.x / TILE_SIZE);
+            let endCol = startCol + Math.ceil(canvas.width / TILE_SIZE) + 1;
+            let startRow = Math.floor(camera.y / TILE_SIZE);
+            let endRow = startRow + Math.ceil(canvas.height / TILE_SIZE) + 1;
+
+            // Clamp bounding checks within max array bounds
+            startCol = Math.max(0, startCol); endCol = Math.min(MAP_COLS - 1, endCol);
+            startRow = Math.max(0, startRow); endRow = Math.min(MAP_ROWS - 1, endRow);
+
+            for (let x = startCol; x <= endCol; x++) {
+                for (let y = startRow; y <= endRow; y++) {
                     let tileKey = `x${x}_y${y}`;
                     let renderX = x * TILE_SIZE;
                     let renderY = y * TILE_SIZE;
 
                     if (fogGrid[tileKey] === true) {
-                        // Render thick fog blocks
                         ctx.fillStyle = PALETTE['fog_hidden'];
                         ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
                     } else {
-                        // Draw revealed ground tiles
                         ctx.fillStyle = PALETTE[worldGrid[tileKey]];
                         ctx.fillRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
 
-                        // Subtle framing boundary line for grid layout separation alignment
                         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
                         ctx.strokeRect(renderX, renderY, TILE_SIZE, TILE_SIZE);
                     }
                 }
             }
 
-            // Draw the Player Character (1.5 tiles tall placeholder asset box)
+            // Draw character relative to global world space coordinates
             ctx.fillStyle = PALETTE['player_color'];
             ctx.fillRect(player.x, player.y, CHAR_WIDTH, CHAR_HEIGHT);
 
-            // Draw simple black structural tool overlay on player placeholder box
             ctx.fillStyle = '#000000';
-            ctx.fillRect(player.x + 12, player.y + 10, 8, 20); // Tool Handle
-            ctx.fillRect(player.x + 4, player.y + 6, 24, 6);   // Tool Mallet Head
+            ctx.fillRect(player.x + 12, player.y + 10, 8, 20);
+            ctx.fillRect(player.x + 4, player.y + 6, 24, 6);
+
+            // RESTORE ORIGINAL RENDER FRAME SYSTEM
+            ctx.restore();
         }
 
         function mainLoop() {
-            processPlayerMechanics();
+            updateGameLogic();
             renderScene();
             requestAnimationFrame(mainLoop);
         }
 
-        // --- 7. INITIALIZATION RUN ---
-        generateStructuredContinent();
+        // --- 6. CORE STARTUP ---
+        generateMassiveContinent();
         requestAnimationFrame(mainLoop);
 
     </script>
